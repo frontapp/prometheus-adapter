@@ -191,9 +191,19 @@ func (p *prometheusProvider) GetMetricByName(ctx context.Context, name types.Nam
 	return p.metricFor(resultValue, name, info, metricSelector)
 }
 
+func (p *prometheusProvider) listObjectNames(mapper apimeta.RESTMapper, client dynamic.Interface, namespace string, selector labels.Selector, info provider.CustomMetricInfo) ([]string, error) {
+	// Pass through any non-pod resource types to the underlying helper
+	if len(info.GroupResource.Group) != 0 || info.GroupResource.Resource != "pods" {
+		return helpers.ListObjectNames(p.mapper, p.kubeClient, namespace, selector, info)
+	}
+	klog.Infof("Listing pods in namespace %s with selector %s", namespace, selector)
+	// TODO: Use informer
+	return helpers.ListObjectNames(p.mapper, p.kubeClient, namespace, selector, info)
+}
+
 func (p *prometheusProvider) GetMetricBySelector(ctx context.Context, namespace string, selector labels.Selector, info provider.CustomMetricInfo, metricSelector labels.Selector) (*custom_metrics.MetricValueList, error) {
 	// fetch a list of relevant resource names
-	resourceNames, err := helpers.ListObjectNames(p.mapper, p.kubeClient, namespace, selector, info)
+	resourceNames, err := p.listObjectNames(p.mapper, p.kubeClient, namespace, selector, info)
 	if err != nil {
 		klog.Errorf("unable to list matching resource names: %v", err)
 		// don't leak implementation details to the user
