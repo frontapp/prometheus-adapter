@@ -226,7 +226,6 @@ func (p *prometheusProvider) listObjectNames(mapper apimeta.RESTMapper, client d
 	}
 
 	// Use informer to avoid expensve API server pod list call
-	klog.Infof("Listing pods in namespace %s with selector %s", namespace, selector)
 	pods, err := p.podLister.Pods(namespace).List(selector)
 	if err != nil {
 		return nil, err
