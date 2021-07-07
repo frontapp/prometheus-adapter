@@ -194,30 +194,6 @@ func (p *prometheusProvider) GetMetricByName(ctx context.Context, name types.Nam
 	return p.metricFor(resultValue, name, info, metricSelector)
 }
 
-func compareStringLists(a []string, b []string) ([]string, []string) {
-	aSet := make(map[string]struct{}, len(a))
-	for _, aElement := range a {
-		aSet[aElement] = struct{}{}
-	}
-	bSet := make(map[string]struct{}, len(b))
-	for _, bElement := range b {
-		bSet[bElement] = struct{}{}
-	}
-	var aExtra []string
-	var bExtra []string
-	for _, aElement := range a {
-		if _, ok := bSet[aElement]; !ok {
-			aExtra = append(aExtra, aElement)
-		}
-	}
-	for _, bElement := range b {
-		if _, ok := aSet[bElement]; !ok {
-			bExtra = append(bExtra, bElement)
-		}
-	}
-	return aExtra, bExtra
-}
-
 // Front: Wrapper function to add pod list fastpath
 func (p *prometheusProvider) listObjectNames(mapper apimeta.RESTMapper, client dynamic.Interface, namespace string, selector labels.Selector, info provider.CustomMetricInfo) ([]string, error) {
 	// Pass through any non-pod resource types to the underlying helper
@@ -234,20 +210,7 @@ func (p *prometheusProvider) listObjectNames(mapper apimeta.RESTMapper, client d
 	for _, pod := range pods {
 		names = append(names, pod.Name)
 	}
-
-	// Compare with API call for verification purposes
-	// TODO: Remove when confident in informer-based implementation
-	refNames, err := helpers.ListObjectNames(p.mapper, p.kubeClient, namespace, selector, info)
-	if err != nil {
-		return nil, err
-	}
-
-	extra, missing := compareStringLists(names, refNames)
-	if len(extra) > 0 || len(missing) > 0 {
-		klog.Warningf("listObjectNames('%s', '%s') diverged: extra=%s missing=%s", namespace, selector, extra, missing)
-	}
-
-	return refNames, nil
+	return names, nil
 }
 
 func (p *prometheusProvider) GetMetricBySelector(ctx context.Context, namespace string, selector labels.Selector, info provider.CustomMetricInfo, metricSelector labels.Selector) (*custom_metrics.MetricValueList, error) {
