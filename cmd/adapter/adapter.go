@@ -180,20 +180,12 @@ func (cmd *PrometheusAdapter) makeProvider(promClient prom.Client, stopCh <-chan
 		return nil, fmt.Errorf("unable to construct Kubernetes client: %v", err)
 	}
 
-	// Front: build Pod informer to optimize pod metrics path
-	rest, err := cmd.ClientConfig()
+	// Front: get Pod informer to optimize pod metrics path
+	cmdInformers, err := cmd.Informers()
 	if err != nil {
 		return nil, err
 	}
-	client, err := kubernetes.NewForConfig(rest)
-	if err != nil {
-		return nil, err
-	}
-
-	podInformerFactory := informers.NewFilteredSharedInformerFactory(client, 0, corev1.NamespaceAll, func(options *metav1.ListOptions) {
-		options.FieldSelector = "status.phase=Running"
-	})
-	podInformer := podInformerFactory.Core().V1().Pods()
+	podInformer := cmdInformers.Core().V1().Pods()
 
 	// extract the namers
 	namers, err := naming.NamersFromConfig(cmd.metricsConfig.Rules, mapper)
@@ -204,8 +196,6 @@ func (cmd *PrometheusAdapter) makeProvider(promClient prom.Client, stopCh <-chan
 	// construct the provider and start it
 	cmProvider, runner := cmprov.NewPrometheusProvider(mapper, dynClient, podInformer.Lister(), promClient, namers, cmd.MetricsRelistInterval, cmd.MetricsMaxAge)
 	runner.RunUntil(stopCh)
-
-	go podInformer.Informer().Run(stopCh)
 
 	return cmProvider, nil
 }
