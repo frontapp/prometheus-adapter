@@ -27,8 +27,12 @@ import (
 	"os"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	openapinamer "k8s.io/apiserver/pkg/endpoints/openapi"
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	k8sinformers "k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/transport"
@@ -172,6 +176,21 @@ func (cmd *PrometheusAdapter) makeProvider(promClient prom.Client, stopCh <-chan
 		return nil, fmt.Errorf("unable to construct Kubernetes client: %v", err)
 	}
 
+	// Front: build Pod informer to optimize pod metrics path
+	rest, err := cmd.ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	client, err := kubernetes.NewForConfig(rest)
+	if err != nil {
+		return nil, err
+	}
+
+	podInformerFactory := k8sinformers.NewFilteredSharedInformerFactory(client, 0, corev1.NamespaceAll, func(options *metav1.ListOptions) {
+		options.FieldSelector = "status.phase=Running"
+	})
+	podInformer := podInformerFactory.Core().V1().Pods()
+
 	// extract the namers
 	namers, err := naming.NamersFromConfig(cmd.metricsConfig.Rules, mapper)
 	if err != nil {
@@ -179,8 +198,10 @@ func (cmd *PrometheusAdapter) makeProvider(promClient prom.Client, stopCh <-chan
 	}
 
 	// construct the provider and start it
-	cmProvider, runner := cmprov.NewPrometheusProvider(mapper, dynClient, promClient, namers, cmd.MetricsRelistInterval, cmd.MetricsMaxAge)
+	cmProvider, runner := cmprov.NewPrometheusProvider(mapper, dynClient, podInformer.Lister(), promClient, namers, cmd.MetricsRelistInterval, cmd.MetricsMaxAge)
 	runner.RunUntil(stopCh)
+
+	go podInformer.Informer().Run(stopCh)
 
 	return cmProvider, nil
 }

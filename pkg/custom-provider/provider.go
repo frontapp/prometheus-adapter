@@ -34,6 +34,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
+	v1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/metrics/pkg/apis/custom_metrics"
 
@@ -52,12 +53,13 @@ type Runnable interface {
 type prometheusProvider struct {
 	mapper     apimeta.RESTMapper
 	kubeClient dynamic.Interface
+	podLister  v1listers.PodLister
 	promClient prom.Client
 
 	SeriesRegistry
 }
 
-func NewPrometheusProvider(mapper apimeta.RESTMapper, kubeClient dynamic.Interface, promClient prom.Client, namers []naming.MetricNamer, updateInterval time.Duration, maxAge time.Duration) (provider.CustomMetricsProvider, Runnable) {
+func NewPrometheusProvider(mapper apimeta.RESTMapper, kubeClient dynamic.Interface, podLister v1listers.PodLister, promClient prom.Client, namers []naming.MetricNamer, updateInterval time.Duration, maxAge time.Duration) (provider.CustomMetricsProvider, Runnable) {
 	lister := &cachingMetricsLister{
 		updateInterval: updateInterval,
 		maxAge:         maxAge,
@@ -72,6 +74,7 @@ func NewPrometheusProvider(mapper apimeta.RESTMapper, kubeClient dynamic.Interfa
 	return &prometheusProvider{
 		mapper:     mapper,
 		kubeClient: kubeClient,
+		podLister:  podLister,
 		promClient: promClient,
 
 		SeriesRegistry: lister,
@@ -189,14 +192,24 @@ func (p *prometheusProvider) GetMetricByName(name types.NamespacedName, info pro
 	return p.metricFor(resultValue, name, info, metricSelector)
 }
 
+// Front: Wrapper function to add pod list fastpath
 func (p *prometheusProvider) listObjectNames(mapper apimeta.RESTMapper, client dynamic.Interface, namespace string, selector labels.Selector, info provider.CustomMetricInfo) ([]string, error) {
 	// Pass through any non-pod resource types to the underlying helper
 	if len(info.GroupResource.Group) != 0 || info.GroupResource.Resource != "pods" {
 		return helpers.ListObjectNames(p.mapper, p.kubeClient, namespace, selector, info)
 	}
+
+	// Use informer to avoid expensve API server pod list call
 	klog.Infof("Listing pods in namespace %s with selector %s", namespace, selector)
-	// TODO: Use informer
-	return helpers.ListObjectNames(p.mapper, p.kubeClient, namespace, selector, info)
+	pods, err := p.podLister.Pods(namespace).List(selector)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, pod := range pods {
+		names = append(names, pod.Name)
+	}
+	return names, nil
 }
 
 func (p *prometheusProvider) GetMetricBySelector(namespace string, selector labels.Selector, info provider.CustomMetricInfo, metricSelector labels.Selector) (*custom_metrics.MetricValueList, error) {
