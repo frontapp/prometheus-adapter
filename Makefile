@@ -1,4 +1,4 @@
-REGISTRY?=gcr.io/k8s-staging-prometheus-adapter
+REGISTRY?=382503283667.dkr.ecr.us-west-1.amazonaws.com
 IMAGE=prometheus-adapter
 ARCH?=$(shell go env GOARCH)
 ALL_ARCH=amd64 arm arm64 ppc64le s390x
@@ -22,7 +22,7 @@ prometheus-adapter: $(SRC_DEPS)
 
 .PHONY: container
 container:
-	docker build -t $(REGISTRY)/$(IMAGE)-$(ARCH):$(TAG) --build-arg ARCH=$(ARCH) --build-arg GO_VERSION=$(GO_VERSION) .
+	docker build -t $(REGISTRY)/$(IMAGE):$(TAG)-$(ARCH) --build-arg ARCH=$(ARCH) --build-arg GO_VERSION=$(GO_VERSION) .
 
 # Container push
 # --------------
@@ -31,7 +31,7 @@ PUSH_ARCH_TARGETS=$(addprefix push-,$(ALL_ARCH))
 
 .PHONY: push
 push: container
-	docker push $(REGISTRY)/$(IMAGE)-$(ARCH):$(TAG)
+	docker push $(REGISTRY)/$(IMAGE):$(TAG)-$(ARCH)
 
 push-all: $(PUSH_ARCH_TARGETS) push-multi-arch;
 
@@ -42,8 +42,8 @@ $(PUSH_ARCH_TARGETS): push-%:
 .PHONY: push-multi-arch
 push-multi-arch: export DOCKER_CLI_EXPERIMENTAL = enabled
 push-multi-arch:
-	docker manifest create --amend $(REGISTRY)/$(IMAGE):$(TAG) $(shell echo $(ALL_ARCH) | sed -e "s~[^ ]*~$(REGISTRY)/$(IMAGE)\-&:$(TAG)~g")
-	@for arch in $(ALL_ARCH); do docker manifest annotate --arch $${arch} $(REGISTRY)/$(IMAGE):$(TAG) $(REGISTRY)/$(IMAGE)-$${arch}:$(TAG); done
+	docker manifest create --amend $(REGISTRY)/$(IMAGE):$(TAG) $(shell echo $(ALL_ARCH) | sed -e "s~[^ ]*~$(REGISTRY)/$(IMAGE):$(TAG)-&~g")
+	@for arch in $(ALL_ARCH); do docker manifest annotate --arch $${arch} $(REGISTRY)/$(IMAGE):$(TAG) $(REGISTRY)/$(IMAGE):$(TAG)-$${arch}; done
 	docker manifest push --purge $(REGISTRY)/$(IMAGE):$(TAG)
 
 # Test
