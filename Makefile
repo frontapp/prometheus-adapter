@@ -1,5 +1,5 @@
-REGISTRY?=directxman12
-IMAGE?=k8s-prometheus-adapter
+REGISTRY?=382503283667.dkr.ecr.us-west-1.amazonaws.com
+IMAGE?=prometheus-adapter
 ARCH?=$(shell go env GOARCH)
 ALL_ARCH=amd64 arm arm64 ppc64le s390x
 ML_PLATFORMS=linux/amd64,linux/arm,linux/arm64,linux/ppc64le,linux/s390x
@@ -40,21 +40,21 @@ docker-build: $(OUT_DIR)/Dockerfile
 	docker run --security-opt=label=disable -it --rm -v $(OUT_DIR):/build -v $(PWD):/go/src/github.com/kubernetes-sigs/prometheus-adapter -e GOARCH=$(ARCH) $(GOIMAGE) /bin/bash -c "\
 		CGO_ENABLED=0 go build -tags netgo -o /build/$(ARCH)/adapter github.com/kubernetes-sigs/prometheus-adapter/cmd/adapter"
 
-	docker build -t $(REGISTRY)/$(IMAGE)-$(ARCH):$(VERSION) --build-arg ARCH=$(ARCH) --build-arg BASEIMAGE=$(BASEIMAGE) $(OUT_DIR)
+	docker build -t $(REGISTRY)/$(IMAGE):$(VERSION)-$(ARCH) --build-arg ARCH=$(ARCH) --build-arg BASEIMAGE=$(BASEIMAGE) $(OUT_DIR)
 
 $(OUT_DIR)/Dockerfile: deploy/Dockerfile
 	mkdir -p $(OUT_DIR)
 	cp deploy/Dockerfile $(OUT_DIR)/Dockerfile
 
 build-local-image: $(OUT_DIR)/Dockerfile $(OUT_DIR)/$(ARCH)/adapter
-	docker build -t $(REGISTRY)/$(IMAGE)-$(ARCH):$(VERSION) --build-arg ARCH=$(ARCH) --build-arg BASEIMAGE=scratch $(OUT_DIR)
+	docker build -t $(REGISTRY)/$(IMAGE):$(VERSION)-$(ARCH) --build-arg ARCH=$(ARCH) --build-arg BASEIMAGE=scratch $(OUT_DIR)
 
 push-%:
 	$(MAKE) ARCH=$* docker-build
-	docker push $(REGISTRY)/$(IMAGE)-$*:$(VERSION)
+	docker push $(REGISTRY)/$(IMAGE):$(VERSION)-$*
 
 push: ./manifest-tool $(addprefix push-,$(ALL_ARCH))
-	./manifest-tool push from-args --platforms $(ML_PLATFORMS) --template $(REGISTRY)/$(IMAGE)-ARCH:$(VERSION) --target $(REGISTRY)/$(IMAGE):$(VERSION)
+	./manifest-tool push from-args --platforms $(ML_PLATFORMS) --template $(REGISTRY)/$(IMAGE):$(VERSION)-ARCH --target $(REGISTRY)/$(IMAGE):$(VERSION)
 
 ./manifest-tool:
 	curl -sSL https://github.com/estesp/manifest-tool/releases/download/v0.5.0/manifest-tool-linux-amd64 > manifest-tool
